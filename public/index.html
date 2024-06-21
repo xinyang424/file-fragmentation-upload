@@ -43,6 +43,7 @@
         const chunksResult = createChunks(file, 10 * 1024 * 1024);
         // 对整个文件进行hash计算
         const hashResult = await hashFile(chunksResult);
+        console.log(chunksResult, hashResult);
         // 上传文件
         uploadFile(chunksResult, hashResult);
       }
@@ -78,7 +79,7 @@
         _read(0);
       });
     };
-    // https://blog.csdn.net/XiugongHao/article/details/137167617
+
     //文件上传
     const uploadFile = (chunksResult, hashResult) => {
       const list = [];
