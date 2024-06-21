@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="./spark-md5.min.js"></script>
+    <style>
+      .upload-container {
+        height: 500px;
+        border: 3px dashed #eee;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #333;
+        user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="upload-container">拖拽此区域进行上传</div>
+  </body>
+  <script>
+    const uplaoder = document.querySelector(".upload-container");
+    const allowFileTypeList = ["jpg", "png", "gif", "svg", "bmp", "webp"];
+
+    // 处理拖拽
+    const handleDrag = async event => {
+      event.preventDefault();
+      if (event.type === "drop") {
+        if (!event.dataTransfer.files.length) return;
+        if (event.dataTransfer.files.length !== 1) {
+          alert("请允许上传一个文件！");
+          return;
+        }
+        const file = event.dataTransfer.files[0];
+        const type = file.name.slice(file.name.lastIndexOf(".") + 1);
+        if (!allowFileTypeList.includes(type)) {
+          alert("仅支持 " + allowFileTypeList.join("、") + " 图片格式文件");
+          return;
+        }
+        // 对文件进行切块，每超过10M文件都进行切块
+        const chunksResult = createChunks(file, 10 * 1024 * 1024);
+        // 对整个文件进行hash计算
+        const hashResult = await hashFile(chunksResult);
+        // 上传文件
+        uploadFile(chunksResult, hashResult);
+      }
+    };
+
+    // 文件切块
+    const createChunks = (file, chunkSize) => {
+      const result = [];
+      for (let i = 0; i < file.size; i += chunkSize) {
+        result.push(file.slice(i, i + chunkSize));
+      }
+      return result;
+    };
+
+    //根据文件分片计算hash值
+    const hashFile = chunks => {
+      return new Promise(resolve => {
+        const spark = new SparkMD5();
+        function _read(i) {
+          if (i >= chunks.length) {
+            resolve(spark.end());
+            return;
+          }
+          const blob = chunks[i];
+          const reader = new FileReader();
+          reader.readAsArrayBuffer(blob);
+          reader.onload = e => {
+            const bytes = e.target.result; //读取到字节数
+            spark.append(bytes); //将一组字节加入其中完成增量运算
+            _read(i + 1);
+          };
+        }
+        _read(0);
+      });
+    };
+    // https://blog.csdn.net/XiugongHao/article/details/137167617
+    //文件上传
+    const uploadFile = (chunksResult, hashResult) => {
+      const list = [];
+      for (let i = 0; i < chunksResult.length; i++) {
+        const formData = new FormData();
+        const blobName = `${hashResult}--${i + 1}`; //blobName就是通过MD5签名后第几片的文件
+        const blobFile = new File([chunksResult[i]], blobName);
+        formData.append("file", blobFile);
+        formData.append("hashResult", hashResult);
+        list.push(
+          fetch("/upload", {
+            method: "post",
+            body: formData,
+          }),
+        );
+      }
+      // 等待所有请求发送完成，通知后端合并切片
+      Promise.all(list).then(res => {
+        fetch("/merge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filename: "imgTest",
+          }),
+        });
+        console.log("上传成功");
+      });
+    };
+
+    uplaoder.addEventListener("dragenter", handleDrag);
+    uplaoder.addEventListener("dragover", handleDrag);
+    uplaoder.addEventListener("drop", handleDrag);
+  </script>
+</html>
